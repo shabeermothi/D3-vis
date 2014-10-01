@@ -1,0 +1,772 @@
+<treemap-chart 
+		options="{ height:750, padding:[30, 30] }"
+		data="treemap.json">
+	</treemap-chart>
+
+<dendogram-chart
+		data="1.json" tooltipUpdate="tooltipUpdate()"
+		options="{ margin:[10, 50, 10, 100], nodeHeight:20, levelWidth:200, circleRadius:12, pathWidth:4, colors: { dummyColor: '#fff', fillColor: '#00b2ef', labelColor: '#00b2ef', pathColor: '#cdcdcd', strokeColor: '#00b2ef' } }">
+		<tooltip
+			style="display:none; position:absolute; padding:5px; background:#DDD; font-family:arial; font-size:12px;"
+			class="rcel" tooltip="tooltip">
+			<div id="tooltip-content" class="rcel"
+				style="width: 150px; height: 30px; padding: 5px; background: #FFF;">
+				<div id="tooltip-name">Name: {{tooltip.name}}</div>
+				<div id="tooltip-name">{{(tooltip.value) ? "Value : " : "" }}
+					{{tooltip.value}}</div>
+			</div>
+		</tooltip> 
+	</dendogram-chart>
+
+/*
+ * **************************************************
+ * !! TO BE REFACTORED TOTALLY !!
+ * D3 Visualizations
+ */
+
+var sunburstController = ['$scope',function($scope){
+	
+	console.log("SunburstController :: ReadyState");
+	
+	$scope.clickhandler = function(d) {
+		$scope.toggle(d)
+		$scope.update($scope.data)
+	};
+	
+	$scope.toggleAll = function(d) {
+		if (d.children) {
+			d.children.forEach($scope.toggleAll);
+			$scope.toggle(d);
+		}
+	};
+	
+	$scope.toggle = function(d) {
+		if (d.children) {
+			d._children = d.children;
+			d.children = null;
+		} else {
+			d.children = d._children;
+			d._children = null;
+		}
+	}
+				
+	$scope.tooltip = {};
+	$scope.tooltipUpdate = function(d) {
+		$scope.tooltip = d
+	}
+	
+}];
+
+var sunburstDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http) {
+	return {
+		restrict: 'AE',
+		replace: true,
+		scope: true,
+		// DON'T CHANGE THE TEMPLATE
+		template: "	<div class='sunburst'>" +
+						"<div>" +
+							"<div></div>" +
+							"<div style='color:#666666; position:absolute; text-align:center; width:140px; z-index:-1;'>" +
+								"<div style='visibility: hidden;'>" +
+									"<span style='font-size: 2.5em;'></span><br/> {{prefix}}" +
+								"</div>" +
+							"</div>" +
+						"</div>" +
+						"<div style='float:right; width:100px'>" +
+							"<input type='checkbox' id='togglelegend'> Legend <br/>" +
+							"<div id='legend' style='visibility: hidden;'></div>" +
+						"</div>" +
+					"</div>",
+		link: function(scope, element, attrs) {
+			var sequenceDiv = element[0].children[0].children[0],
+				infoDiv = element[0].children[0].children[1],
+				explanationDiv = element[0].children[0].children[1].children[0],
+				percentageDiv = element[0].children[0].children[1].children[0].children[0],
+				togglelegendDiv = element[0].children[1].children[0],
+				legendDiv = element[0].children[1].children[2];
+
+			scope.prefix = attrs.prefix;
+			
+			// Mapping of step names to colors.
+			var colors; // = { 'home':'#5687d1', 'product':'#7b615c', 'search':'#de783b', 'account':'#6ab975', 'other':'#a173d1', 'end':'#bbbbbb' };
+			colors = scope.$eval(attrs.colors) || {};
+			
+			//scope.$apply();
+				$http({
+					url: attrs.data
+				}).then(function(response, status) {
+					var csv = d3.csv.parseRows(response.data);
+					var json = buildHierarchy(csv);
+					createVisualization(json);
+					//scope.data = response.data;
+				});
+				
+				//var svg = d3.select(element[0]).append("svg"), vis, width, height, root={}, i=0;
+				//var tooltip = angular.element(element.children()[0]);
+				
+				// Dimensions of sunburst.
+				var width = 1200, height = 640;
+				var radius = Math.min(width, height) / 2;
+
+				// Breadcrumb dimensions: width, height, spacing, width of tip/tail.
+				var b = { w: 75, h: 30, s: 3, t: 10 };
+
+				// Total size of all segments; we set this later, after loading the data.
+				var totalSize = 0; 
+				
+				d3.select(infoDiv)
+					.style("left", (width/2 - 70) + "px")
+					.style("top", (height/2 + 30) + "px")
+							
+				var vis = d3.select(element[0].parentNode).append("svg:svg")
+					.attr("width", width)
+					.attr("height", height)
+					.append("svg:g")
+					.attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
+
+				var partition = d3.layout.partition()
+					.size([2 * Math.PI, radius * radius])
+					.value(function(d) { return d.size; });
+
+				var arc = d3.svg.arc()
+					.startAngle(function(d) { return d.x; })
+					.endAngle(function(d) { return d.x + d.dx; })
+					.innerRadius(function(d) { return Math.sqrt(d.y); })
+					.outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
+	
+				// LOCAL FUNCTIONS
+				// Main function to draw and set up the visualization, once we have the data.
+				function createVisualization(json) {
+					// Basic setup of page elements.
+					initializeBreadcrumbTrail();
+					drawLegend();
+					d3.select(togglelegendDiv).on("click", toggleLegend);
+
+					// Bounding circle underneath the sunburst, to make it easier to detect
+					// when the mouse leaves the parent g.
+					vis.append("svg:circle")
+						.attr("r", radius)
+						.style("opacity", 0);
+
+					// For efficiency, filter nodes to keep only those large enough to see.
+					var nodes = partition.nodes(json)
+					.filter(function(d) {
+					return (d.dx > 0.005); // 0.005 radians = 0.29 degrees
+					});
+
+					var path = vis.data([json]).selectAll("path")
+						.data(nodes)
+						.enter().append("svg:path")
+						.attr("display", function(d) { return d.depth ? null : "none"; })
+						.attr("d", arc)
+						.attr("fill-rule", "evenodd")
+						.style("fill", function(d) { return colors[d.name]; })
+						.style("opacity", 1)
+						.on("mouseover", mouseover);
+
+					// Add the mouseleave handler to the bounding circle.
+					vis.on("mouseleave", mouseleave);
+
+					// Get total size of the tree = value of root node from partition.
+					totalSize = path.node().__data__.value;
+				};
+									
+				// Take a 2-column CSV and transform it into a hierarchical structure suitable
+				// for a partition layout. The first column is a sequence of step names, from
+				// root to leaf, separated by hyphens. The second column is a count of how 
+				// often that sequence occurred.
+				function buildHierarchy(csv) {
+					var root = {"name": "root", "children": []};
+					for (var i = 0; i < csv.length; i++) {
+						var sequence = csv[i][0];
+						var size = +csv[i][1];
+						if (isNaN(size)) { // e.g. if this is a header row
+							continue;
+						}
+						var parts = sequence.split("-");
+						var currentNode = root;
+						for (var j = 0; j < parts.length; j++) {
+							var children = currentNode["children"];
+							var nodeName = parts[j];
+							var childNode;
+							if (j + 1 < parts.length) {
+								// Not yet at the end of the sequence; move down the tree.
+								var foundChild = false;
+								for (var k = 0; k < children.length; k++) {
+									if (children[k]["name"] == nodeName) {
+										childNode = children[k];
+										foundChild = true;
+										break;
+									}
+								}
+								// If we don't already have a child node for this branch, create it.
+								if (!foundChild) {
+									childNode = {"name": nodeName, "children": []};
+									children.push(childNode);
+								}
+								currentNode = childNode;
+							} else {
+								// Reached the end of the sequence; create a leaf node.
+								childNode = {"name": nodeName, "size": size};
+								children.push(childNode);
+							}
+						}
+					}
+					return root;
+				};
+
+				function initializeBreadcrumbTrail() {
+					// Add the svg area.
+					var trail = d3.select(sequenceDiv).append("svg:svg")
+						.attr("width", width)
+						.attr("height", 50)
+						.attr("id", "trail");
+					// Add the label at the end, for the percentage.
+					trail.append("svg:text")
+						.attr("id", "endlabel")
+						.style("fill", "#000");
+				}
+
+				// Generate a string that describes the points of a breadcrumb polygon.
+				function breadcrumbPoints(d, i) {
+					var points = [];
+					points.push("0,0");
+					points.push(b.w + ",0");
+					points.push(b.w + b.t + "," + (b.h / 2));
+					points.push(b.w + "," + b.h);
+					points.push("0," + b.h);
+					if (i > 0) { // Leftmost breadcrumb; don't include 6th vertex.
+						points.push(b.t + "," + (b.h / 2));
+					}
+					return points.join(" ");
+				}
+
+				// Update the breadcrumb trail to show the current sequence and percentage.
+				function updateBreadcrumbs(nodeArray, percentageString) {
+					// Data join; key function combines name and depth (= position in sequence).
+					var g = d3.select("#trail")
+						.selectAll("g")
+						.data(nodeArray, function(d) { return d.name + d.depth; });
+
+					// Add breadcrumb and label for entering nodes.
+					var entering = g.enter().append("svg:g");
+
+					entering.append("svg:polygon")
+						.attr("points", breadcrumbPoints)
+						.style("fill", function(d) { return colors[d.name]; });
+
+					entering.append("svg:text")
+						.attr("x", (b.w + b.t) / 2)
+						.attr("y", b.h / 2)
+						.attr("dy", "0.35em")
+						.attr("text-anchor", "middle")
+						.text(function(d) { return d.name; });
+
+					// Set position for entering and updating nodes.
+					g.attr("transform", function(d, i) {
+						return "translate(" + i * (b.w + b.s) + ", 0)";
+					});
+
+					// Remove exiting nodes.
+					g.exit().remove();
+
+					// Now move and update the percentage at the end.
+					d3.select("#trail").select("#endlabel")
+						.attr("x", (nodeArray.length + 0.5) * (b.w + b.s))
+						.attr("y", b.h / 2)
+						.attr("dy", "0.35em")
+						.attr("text-anchor", "middle")
+						.text(percentageString);
+
+					// Make the breadcrumb trail visible, if it's hidden.
+					d3.select("#trail").style("visibility", "");
+				}
+
+				function drawLegend() {
+					// Dimensions of legend item: width, height, spacing, radius of rounded rect.
+					var li = { w: 75, h: 30, s: 3, r: 3 };
+
+					var legend = d3.select(legendDiv).append("svg:svg")
+						.attr("width", li.w)
+						.attr("height", d3.keys(colors).length * (li.h + li.s));
+
+					var g = legend.selectAll("g")
+						.data(d3.entries(colors))
+						.enter().append("svg:g")
+						.attr("transform", function(d, i) {
+							return "translate(0," + i * (li.h + li.s) + ")";
+						});
+
+					g.append("svg:rect")
+						.attr("rx", li.r)
+						.attr("ry", li.r)
+						.attr("width", li.w)
+						.attr("height", li.h)
+						.style("fill", function(d) { return d.value; });
+
+					g.append("svg:text")
+						.attr("x", li.w / 2)
+						.attr("y", li.h / 2)
+						.attr("dy", "0.35em")
+						.attr("text-anchor", "middle")
+						.text(function(d) { return d.key; });
+				}
+
+				function toggleLegend() {
+					var legend = d3.select(legendDiv);
+					if (legend.style("visibility") == "hidden") {
+						legend.style("visibility", "");
+					} else {
+						legend.style("visibility", "hidden");
+					}
+				}
+
+				// Fade all but the current sequence, and show it in the breadcrumb trail.
+				function mouseover(d) {
+					var percentage = (100 * d.value / totalSize).toPrecision(3);
+					var percentageString = percentage + "%";
+					if (percentage < 0.1) {
+						percentageString = "< 0.1%";
+					}
+					d3.select(percentageDiv).text(percentageString);
+
+					d3.select(explanationDiv).style("visibility", "");
+
+					var sequenceArray = getAncestors(d);
+					updateBreadcrumbs(sequenceArray, percentageString);
+
+					// Fade all the segments.
+					d3.selectAll("path").style("opacity", 0.3);
+
+					// Then highlight only those that are an ancestor of the current segment.
+					vis.selectAll("path")
+						.filter(function(node) {
+							return (sequenceArray.indexOf(node) >= 0);
+						})
+						.style("opacity", 1);
+				}
+
+				// Restore everything to full opacity when moving off the visualization.
+				function mouseleave(d) {
+					// Hide the breadcrumb trail
+					d3.select("#trail").style("visibility", "hidden");
+
+					// Deactivate all segments during transition.
+					d3.selectAll("path").on("mouseover", null);
+
+					// Transition each segment to full opacity and then reactivate it.
+					d3.selectAll("path")
+						.transition()
+						.duration(500)
+						.style("opacity", 1)
+						.each("end", function() {
+							d3.select(this).on("mouseover", mouseover);
+						});
+
+					d3.select(explanationDiv)
+						.transition()
+						.duration(500)
+						.style("visibility", "hidden");
+				}
+
+
+				// Given a node in a partition layout, return an array of all of its ancestor
+				// nodes, highest first, but excluding the root.
+				function getAncestors(node) {
+					var path = [];
+					var current = node;
+					while (current.parent) {
+						path.unshift(current);
+						current = current.parent;
+					}
+					return path;
+				}
+		}
+	}
+}];
+
+var dendogramController = ['$scope',function($scope){
+	
+	console.log("DendogramController :: ReadyState");
+	
+	$scope.clickhandler = function(d) {
+		$scope.toggle(d)
+		$scope.update($scope.data)
+	};
+	
+	$scope.toggleAll = function(d) {
+		if (d.children) {
+			d.children.forEach($scope.toggleAll);
+			$scope.toggle(d);
+		}
+	};
+	
+	$scope.toggle = function(d) {
+		if (d.children) {
+			d._children = d.children;
+			d.children = null;
+		} else {
+			d.children = d._children;
+			d._children = null;
+		}
+	}
+				
+	$scope.tooltip = {};
+	$scope.tooltipUpdate = function(d) {
+		$scope.tooltip = d
+	}
+	
+}];
+
+var dendogramDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http) {
+	return {
+		restrict: 'AE',
+		replace: true,
+		scope: true,
+		link: function(scope, element, attrs) {
+				var o = scope.$eval(attrs.options) || {};
+				var options = { 
+					margin: o.margin || [10, 50, 10, 100], 
+					nodeHeight: o.nodeHeight || 20, 
+					levelWidth: o.levelWidth || 180, 
+					circleRadius: o.circleRadius || 4.5, 
+					pathWidth: o.pathWidth || 6	, 
+					colors: { 
+						dummyColor: (o.colors && o.colors.dummyColor) || '#fff', 
+						fillColor: (o.colors && o.colors.fillColor) || '#FFA100', 
+						labelColor: (o.colors && o.colors.labelColor) || '#333', 
+						pathColor: (o.colors && o.colors.pathColor) || '#cdcdcd', 
+						strokeColor: (o.colors && o.colors.strokeColor) || '#FFA100' 
+					} 
+				}
+				var margin = options.margin; // Top Right Bottom Left
+				var tree, diagonal = d3.svg.diagonal().projection(function(d) { return [d.y, d.x]; });
+
+				scope.$watch(function() {
+					return angular.element($window)[0].innerWidth;
+				}, function() {
+					$http({
+						url: attrs.data
+					}).then(function(response, status) {
+						scope.data = response.data;
+						scope.toggleAll(scope.data);
+						scope.render(scope.data);
+					});
+				});
+			
+				var svg = d3.select(element[0]).append("svg"), vis, width, height, root={}, i=0;
+				var tooltip = angular.element(element.children()[0]);
+	
+				scope.render = function(data) {
+					root = data;
+					if (!root) { alert("No Data..."); return; }
+					
+					width = element[0].parentNode.clientWidth - margin[1]- margin[3];
+					height = Math.max(450, element[0].parentNode.clientHeight + margin[0]+ margin[2]);
+					tree = d3.layout.tree().size([height, width]);
+					root.x0 = height / 2;
+					root.y0 = 0;
+					
+					svg.html("");
+					svg.attr("width", width)
+						.attr("height", height);
+						
+					vis = svg.append("svg:g")
+						.attr("transform", "translate(" + margin[3] + "," + margin[0] + ")");
+						
+					scope.update(root);
+				};
+				
+				scope.update = function(source) {
+					var duration = d3.event && d3.event.altKey ? 5000 : 500;
+
+					// Compute the new tree layout.
+					var nodes = tree.nodes(root).reverse();
+					var h = Math.max(height, nodes.length * (options.nodeHeight* 2) + margin[0] + margin[2]);
+					svg.attr("height", h);
+
+					// Normalize for fixed-depth.
+					nodes.forEach(function(d) { d.y = d.depth * options.levelWidth; d.x = d.x / height * h; });
+					
+					d3.select(vis).html("sdf");
+					// Update the nodes…
+					var node = vis.selectAll("g.node")
+						.data(nodes, function(d) { var id = d.id || (d.id = ++i); return scope.prefix + "-" + id; });
+
+					// Enter any new nodes at the parent's previous position.
+					var nodeEnter = node.enter().append("svg:g")
+						.attr("class", "node")
+						.attr("transform", function(d) { return "translate(" + source.y0 + "," + source.x0 + ")"; })
+						.on("click", function(d) { scope.toggle(d); scope.update(d); });
+
+					nodeEnter.append("svg:circle")
+						.attr("r", options.circleRadius)
+						.style("cursor", "pointer")
+						.style("fill", function(d) { return d._children ? options.colors.fillColor : options.colors.dummyColor; })
+						.style("stroke", function(d) { return options.colors["pathColor"]; })
+						.style("stroke-width", "3")
+						.on("mouseover", function(d) { 
+							if (tooltip) { 
+								scope.$apply(function() { scope.tooltipUpdate(d); });
+								scope.tooltipHandler(d);
+								tooltip.css("display", "block"); 
+							} 
+						})
+						.on("mouseout", function(d) { 
+							if (tooltip) { 
+								scope.$apply(function() { scope.tooltipUpdate(d); });
+								tooltip.css("display", "none"); 
+							}
+						});
+
+					nodeEnter.append("svg:text")
+						.attr("x", function(d) { return d.children || d._children ? -10 : 10; })
+						.attr("dy", ".35em")
+						.attr("text-anchor", function(d) { return d.children || d._children ? "end" : "start"; })
+						.text(function(d) { return d.name; })
+						.style("fill", options.colors.labelColor)
+						.style("fill-opacity", 1e-6);
+
+						// Transition nodes to their new position.
+						var nodeUpdate = node.transition()
+							.duration(duration)
+							.attr("transform", function(d) { return "translate(" + d.y + "," + d.x + ")"; });
+
+						nodeUpdate.select("circle")
+							.attr("r", options.circleRadius)
+							.style("fill", function(d) { return d._children ? options.colors.fillColor : options.colors.dummyColor; });
+
+						nodeUpdate.select("text")
+							.style("fill-opacity", 1);
+
+						// Transition exiting nodes to the parent's new position.
+						var nodeExit = node.exit().transition()
+							.duration(duration)
+							.attr("transform", function(d) { return "translate(" + source.y + "," + source.x + ")"; })
+							.remove();
+
+						nodeExit.select("circle")
+							.attr("r", options.circleRadius);
+
+						nodeExit.select("text")
+							.style("fill-opacity", 1e-6);
+
+						// Update the links…
+						var link = vis.selectAll("path.link")
+							.data(tree.links(nodes), function(d) { return d.target.id; });
+
+						// Enter any new links at the parent's previous position.
+						link.enter().insert("svg:path", "g")
+							.attr("class", "link")
+							.style("fill", "none")
+							.style("stroke", options.colors.pathColor)
+							.style("stroke-width", options.pathWidth)
+							.attr("d", function(d) {
+								var o = {x: source.x0, y: source.y0};
+								return diagonal({source: o, target: o});
+							})
+							.transition()
+							.duration(duration)
+							.attr("d", diagonal);
+
+						// Transition links to their new position.
+						link.transition()
+							.duration(duration)
+							.attr("d", diagonal);
+
+						// Transition exiting nodes to the parent's new position.
+						link.exit().transition()
+							.duration(duration)
+							.attr("d", function(d) {
+								var o = {x: source.x, y: source.y};
+								return diagonal({source: o, target: o});
+							})
+							.remove();
+
+						// Stash the old positions for transition.
+						nodes.forEach(function(d) {
+							d.x0 = d.x;
+							d.y0 = d.y;
+						});
+
+				}; // render
+				
+				scope.tooltipHandler= function(d) {
+					var width = tooltip[0].clientWidth, height = tooltip[0].clientHeight;
+					d3.select(tooltip[0])
+						.style("left", function() {
+							if ((d3.event.pageX - width) < 10) {
+								return (d3.event.pageX + options.circleRadius) + "px";
+							} else {
+								return (d3.event.pageX - width + options.circleRadius) + "px";
+							}
+						})
+						.style("top", function() {
+							if ((d3.event.pageY - height) < 10) {
+								return (d3.event.pageY + options.circleRadius) + "px";
+							} else {
+								return (d3.event.pageY - height + options.circleRadius) + "px";
+							}
+						})
+						.style("display", "block");
+				}
+			
+		}
+	}
+}];
+
+
+var treemapController = ['$scope',function($scope){
+	
+	console.log("TreemapController :: ReadyState");
+	
+	$scope.clickhandler = function(d) {
+		$scope.toggle(d)
+		$scope.update($scope.data)
+	};
+	
+	$scope.toggleAll = function(d) {
+		if (d.children) {
+			d.children.forEach($scope.toggleAll);
+			$scope.toggle(d);
+		}
+	};
+	
+	$scope.toggle = function(d) {
+		if (d.children) {
+			d._children = d.children;
+			d.children = null;
+		} else {
+			d.children = d._children;
+			d._children = null;
+		}
+	}
+				
+	$scope.tooltip = {};
+	$scope.tooltipUpdate = function(d) {
+		$scope.tooltip = d
+	}
+}];
+
+var treemapDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http) {
+	return {
+		restrict: 'AE',
+		replace: true,
+		scope: true,
+		// DON'T CHANGE THE TEMPLATE
+		template: "<div class='tree'></div>",
+		link: function(scope, element, attrs) {
+			//var sequenceDiv = element[0].children[0].children[0];
+
+			//window.d3 = {};
+			//scope.$apply();
+			
+				var options = scope.$eval(attrs.options);
+				console.log(options['height'])
+				var height = (options['height']) ? options['height'] + 'px' : '720px';
+				var width = (options['width']) ? options['width'] + 'px' : '100%';
+				var m = (options['padding']) ? options['padding'] : [30, 30];
+				angular.element(element[0]).css("height", height);
+				angular.element(element[0]).css("width", width);
+				angular.element(element[0]).css("marginTop", m[0]+'px');
+					
+				var w = element[0].clientWidth - (m[0] * 2),
+					h = element[0].clientHeight - (m[1] *2),
+					x = d3.scale.linear().range([0, w]),
+					y = d3.scale.linear().range([0, h]),
+					color = d3.scale.category20c(),
+					root,
+					node;
+					
+					$http({
+						url: attrs.data
+					}).then(function(response, status) {
+						scope.data = response.data;
+						scope.render(scope.data);
+					});
+					
+					scope.render = function(data) {
+						var treemap = d3.layout.treemap()
+							.round(false)
+							.size([w, h])
+							.sticky(true)
+							.value(function(d) { return d.size; });
+
+						var svg = d3.select(element[0]).append("div")
+							.attr("class", "chart")
+							.style("width", w + "px")
+							.style("height", h + "px")
+							.append("svg:svg")
+							.attr("width", w)
+							.attr("height", h)
+							.append("svg:g")
+							.attr("transform", "translate(.5,.5)");
+
+						node = root = data;
+						console.log(root)
+
+						var nodes = treemap.nodes(root)
+							.filter(function(d) { return !d.children; });
+
+						var cell = svg.selectAll("g")
+							.data(nodes)
+							.enter().append("svg:g")
+							.attr("class", "cell")
+							.attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; })
+							.on("click", function(d) { return zoom(node == d.parent ? root : d.parent); });
+
+						cell.append("svg:rect")
+							.attr("width", function(d) { return d.dx - 1; })
+							.attr("height", function(d) { return d.dy - 1; })
+							.style("fill", function(d) { return color(d.parent.name); });
+
+						cell.append("svg:text")
+							.attr("x", function(d) { return d.dx / 2; })
+							.attr("y", function(d) { return d.dy / 2; })
+							.attr("dy", ".35em")
+							.attr("text-anchor", "middle")
+							.text(function(d) { return d.name; })
+							.style("opacity", function(d) { d.w = this.getComputedTextLength(); return d.dx > d.w ? 1 : 0; });
+
+						d3.select(window).on("click", function() { zoom(root); });
+
+						d3.select("select").on("change", function() {
+							treemap.value(this.value == "size" ? size : count).nodes(root);
+							zoom(node);
+						});
+						
+						
+						// OTHER JS Functions
+						function size(d) {
+							return d.size;
+						}
+
+						function count(d) {
+							return 1;
+						}
+
+						function zoom(d) {
+							var kx = w / d.dx, ky = h / d.dy;
+							x.domain([d.x, d.x + d.dx]);
+							y.domain([d.y, d.y + d.dy]);
+
+							var t = svg.selectAll("g.cell").transition()
+								.duration(d3.event.altKey ? 7500 : 750)
+								.attr("transform", function(d) { return "translate(" + x(d.x) + "," + y(d.y) + ")"; });
+
+							t.select("rect")
+								.attr("width", function(d) { return kx * d.dx - 1; })
+								.attr("height", function(d) { return ky * d.dy - 1; })
+
+							t.select("text")
+								.attr("x", function(d) { return kx * d.dx / 2; })
+								.attr("y", function(d) { return ky * d.dy / 2; })
+								.style("opacity", function(d) { return kx * d.dx > d.w ? 1 : 0; });
+
+							node = d;
+							d3.event.stopPropagation();
+						}
+					}
+		}
+	}
+}];
