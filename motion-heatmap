@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+  <head>
+  <!-- Latest compiled and minified CSS -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+
+<!-- Optional theme -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+
+<script src="https://code.jquery.com/jquery-2.1.1.min.js" type="text/javascript"></script>
+
+<!-- Latest compiled and minified JavaScript -->
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+    <style>
+      rect.bordered {
+        stroke: #E6E6E6;
+        stroke-width:2px;   
+      }
+
+      text.mono {
+        font-size: 9pt;
+        font-family: Consolas, courier;
+        fill: #aaa;
+      }
+
+      text.axis-workweek {
+        fill: #000;
+      }
+
+      text.axis-worktime {
+        fill: #000;
+      }
+      
+      .left30 {
+      	margin-left : -30px;
+      }
+      .container {
+      	margin-top : 50px;
+      }
+    </style>
+    <script src="http://d3js.org/d3.v3.js"></script>
+  </head>
+  <body>
+  
+  	<div class="container">
+  		<div class="row">
+  			<div class="col-md-2">
+  				Location :
+  				<p>
+  					<select id="location">
+  						<option value="chennai">Chennai</option>
+  						<option value="pune">Pune</option>
+  						<option value="newjersey">New Jersey</option>
+  					</select>
+  				</p>
+  			</div>
+  			<div class="col-md-1">
+  				Floor :
+  				<p>
+  					<select id="floor">
+  						<option value="all">All Floors</option>
+  						<option value="Floor1">Floor 1</option>
+  						<option value="Floor2">Floor 2</option>
+  						<option value="Floor3">Floor 3</option>
+  					</select>
+  				</p>
+  			</div>
+  			<div class="col-md-1">
+  				Month :
+  				<p>
+  					<select id="month">
+  						<option value="all" selected>All Months</option>
+  						<option value="jan">Jan</option>
+  						<option value="feb">Feb</option>
+  						<option value="mar">Mar</option>
+  						<option value="sep">Sep</option>
+  					</select>
+  				</p>
+  			</div>
+  			<div class="col-md-1">
+  				Year :
+  				<p>
+  					<select id="year">
+  						<option value="2014" selected>2014</option>
+  						<option value="2013">2013</option>
+  						<option value="2012">2012</option>
+  					</select>
+  				</p>
+  			</div>
+  		</div>
+  		<div class="row">
+  			<div class="col-md-12">
+  				<div id="vis"></div>
+  			</div>
+  		</div>
+  	</div>
+
+    <script type="text/javascript">
+      var margin = { top: 50, right: 0, bottom: 100, left: 30 },
+          width = 450 - margin.left - margin.right,
+          height = 430 - margin.top - margin.bottom,
+          gridSize = 15,
+          legendElementWidth = gridSize*2,
+          buckets = 9,
+          colors = ["#F4BD0C","#68D2DF","#4B4B4B","#D0DF00","#0057B8","#43B02A","#A7A9AC","#E75524","#86D2E0"];
+
+      var heatmapViz = {
+    		  dataSource : "",
+    		  loadData : function(vizTarget,floor){
+    			  d3.csv(this.dataSource,
+   				        function(d) {
+    				  	if(floor == "all"){
+    				  		return {
+       				            day: +d.row,
+       				            hour: +d.column,
+       				            value: +d.value,
+       				            locperson: d.locperson
+       				          };
+    				  	}else{
+    				  		return {
+       				            day: +d.row,
+       				            hour: +d.column,
+       				            value: (floor == d.locfloor)?(+d.value):0,
+       				            locperson: d.locperson
+       				          };
+    				  	}
+   				          
+   				        },
+   				        function(error, data) {
+   				          var colorScale = d3.scale.quantile()
+   				              .domain([0, buckets - 1, d3.max(data, function (d) { return d.value; })])
+   				              .range(colors.reverse());
+   				          
+   				       	d3.select("#"+vizTarget).html("");
+   				          
+   				          var svg = d3.select("#"+vizTarget).append("svg")
+   				              .attr("width", 1200)
+   				              .attr("height", 800)
+   				              .append("g")
+   				              .attr("transform","translate(0,0)");
+
+   				          var heatMap = svg.selectAll(".hour")
+   				              .data(data)
+   				              .enter().append("rect")
+   				              .attr("x", function(d) { return (d.hour - 1) * gridSize; })
+   				              .attr("y", function(d) { return (d.day - 1) * gridSize; })
+   				              .attr("rx", 4)
+   				              .attr("ry", 4)
+   				              .attr("class", "hour bordered")
+   				              .attr("width", gridSize)
+   				              .attr("height", gridSize)
+   				              .style("fill", colors[0]);
+
+   				          heatMap.transition()
+   				          		.duration(2000)
+   				          		.ease('linear')
+   				              .style("fill", function(d) { return colorScale(d.value); });
+
+   				          heatMap.append("title").text(function(d) { return d.value + " - " + d.locperson; });
+   				              
+   				          /* var legend = svg.selectAll(".legend")
+   				              .data([0].concat(colorScale.quantiles()), function(d) { return d; })
+   				              .enter().append("g")
+   				              .attr("class", "legend");
+
+   				          legend.append("rect")
+   				            .attr("x", function(d, i) { return legendElementWidth * i; })
+   				            .attr("y", height)
+   				            .attr("width", legendElementWidth)
+   				            .attr("height", gridSize / 2)
+   				            .style("fill", function(d, i) { return colors[i]; });
+
+   				          legend.append("text")
+   				            .attr("class", "mono")
+   				            .text(function(d) { return "≥ " + Math.round(d); })
+   				            .attr("x", function(d, i) { return legendElementWidth * i; })
+   				            .attr("y", height + gridSize); */
+   				            
+   				      });
+    		  }
+      };
+      
+      var chennaiFloor1HeatMap = Object.create(heatmapViz);
+      chennaiFloor1HeatMap.dataSource = "../Src/Data/Heatmap/chennai-all-all-2014.csv";
+      chennaiFloor1HeatMap.loadData("vis","all");
+      
+      $(document).ready(function(){
+    	  
+    	  	var loadVis = function(dataSource,floor){
+    	  		
+    	  		var chennaiFloor1HeatMap = Object.create(heatmapViz);
+    	  		
+    	  		chennaiFloor1HeatMap.dataSource = "../Src/Data/Heatmap/"+dataSource;
+   	 	    	chennaiFloor1HeatMap.loadData("vis",floor);
+    	  		
+    	  	};
+    	  	
+    	  	var reloadData = function(floor){
+    	  		var dataSource = $("#location").val() + "-all-" + $("#month").val() + "-" + $("#year").val() + ".csv";
+    	 		loadVis(dataSource,floor);
+    	  	}
+    	  
+    	 	$("#location").on("change",function(){
+    	 		reloadData("all");
+    	 	}); 
+    	 	
+    	 	$("#floor").on("change",function(){
+    	 		reloadData($("#floor").val());
+    	 	});
+    	 	
+      });
+      
+    </script>
+  </body>
+</html>
