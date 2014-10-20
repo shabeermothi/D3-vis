@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+<head>
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.1/jquery.min.js"></script>
+    <script type="text/javascript" src="js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="js/moment.min.js"></script>
+    <script src="http://d3js.org/d3.v3.js"></script>
+
+</head>
+<body>
+
+<div class="container">
+    <div class="row">
+
+    </div>
+    <div class="row">
+        <div class="col-md-2">
+            Location :
+            <p>
+                <select id="location">
+                    <option value="chennai">Chennai</option>
+                    <option value="pune">Pune</option>
+                    <option value="newjersey">New Jersey</option>
+                </select>
+            </p>
+        </div>
+        <div class="col-md-1">
+            Floor :
+            <p>
+                <select id="floor">
+                    <option value="all">All Floors</option>
+                    <option value="Floor1">Floor 1</option>
+                    <option value="Floor2">Floor 2</option>
+                    <option value="Floor3">Floor 3</option>
+                </select>
+            </p>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-2">
+            <div id="date-holder"></div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6">
+            <div id="vis" style="background-color: grey"></div>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    var margin = { top: 50, right: 0, bottom: 100, left: 30 },
+            width = 100 - margin.left - margin.right,
+            height = 200 - margin.top - margin.bottom,
+            gridSize = 15,
+            legendElementWidth = gridSize*2,
+            buckets = 9,
+            colors = ["#F0F0F0","#00FF99"];
+
+    var updateVisualization = function(data){
+
+        console.log("Called",data);
+
+
+
+
+    };
+
+    var heatmapViz = {
+        dataSource : "",
+        vizTarget: "",
+        loadData : function(){
+            d3.csv(this.dataSource,
+                    function(d) {
+                            return {
+                                day: +d.row,
+                                hour: +d.column,
+                                value: +d.value,
+                                locperson: d.locperson,
+                                itemdate: d.itemdate
+                            };
+                    },
+                    function(error, data) {
+
+                        var colorScale = d3.scale.linear()
+                                .domain([0, buckets - 1, d3.max(data, function (d) { return d.value; })])
+                                .range(colors);
+
+
+                        d3.select("#vis").html("");
+
+                        var nest = d3.nest()
+                                .key(function(d){ return d.itemdate; })
+                                .entries(data);
+
+                        var i = 0;
+
+                        var svg = d3.select("#vis").append("svg")
+                                .attr("width", 1200)
+                                .attr("height", 800)
+                                .style("z-index",1000)
+                                .append("g")
+                                .attr("transform","translate(0,0)");
+
+                        var nestArr = [];
+
+                        setInterval(function(){
+                            if(i < nest.length){
+                                console.log("Nest Object ", i ,nest[i],
+
+                                        " Keys " , nest[i]["key"]);
+
+                                d3.select("#date-holder")
+                                        .
+                                        text
+
+                                (nest[i]["key"])
+                                        .transition()
+                                        .duration(100)
+                                        .ease('linear');
+
+                                for(var x in nest[i]){
+                                    (Array.isArray(
+
+                                            nest[i][x]))?(nestArr = nestArr.concat(nest[i
+                                            ][x])):"";
+                                }
+                                console.log(nestArr);
+
+                                svg.selectAll(".hour")
+                                        .remove()
+                                        .transition()
+                                        .duration(100)
+                                        .ease("linear");
+
+                                var hetmap = svg.selectAll(".hour")
+                                        .data(nestArr)
+                                        .enter().append("rect")
+                                        .attr("x", function(d) { return (d.hour - 1
+
+                                                ) * gridSize; })
+                                        .attr("y", function(d) { return (d.day - 1) * gridSize; })
+                                        .attr("rx", 4)
+                                        .attr("ry", 4)
+                                        .attr("class", "hour bordered")
+                                        .attr(
+
+                                        "width", gridSize)
+                                        .attr(
+                                        "height", gridSize)
+                                        .style("fill", colors[0]);
+
+                                hetmap.transition()
+                                        .duration(100)
+                                        .
+                                        ease('linear')
+                                        .style("fill", function(d) { return colorScale(d.value); });
+
+                                hetmap.append("title").text(function(d) { return d.value + " - " + d.locperson; });
+
+                                i++;
+                            }
+                        },3000);
+
+                    });
+        }
+    };
+
+    var visObject = Object.create(heatmapViz);
+    visObject.dataSource = "Data/temp.csv";
+    visObject.vizTarget = "vis";
+    visObject.loadData();
+
+</script>
+</body>
+</html>
