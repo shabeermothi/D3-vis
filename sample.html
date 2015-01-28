@@ -1,0 +1,234 @@
+// Dendogram reformatted to load data from server
+// Needs integration with service
+var dendogramController = ['$scope',function($scope){
+	
+	console.log("DendogramController :: ReadyState");
+	
+	$scope.clickhandler = function(d) {
+		$scope.toggle(d)
+		$scope.update($scope.data)
+	};
+	
+	$scope.toggleAll = function(d) {
+		if (d.children) {
+			d.children.forEach($scope.toggleAll);
+			$scope.toggle(d);
+		}
+	};
+	
+	$scope.toggle = function(d) {
+		if (d.children) {
+			d._children = d.children;
+			d.children = null;
+		} else {
+			d.children = d._children;
+			d._children = null;
+		}
+	}
+				
+	$scope.tooltip = {};
+	$scope.tooltipUpdate = function(d) {
+		$scope.tooltip = d
+	}
+	
+}];
+
+var dendogramDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http) {
+	return {
+		restrict: 'AE',
+		replace: true,
+		scope: true,
+		link: function(scope, element, attrs) {
+				var o = scope.$eval(attrs.options) || {};
+				var options = { 
+				
+					margin: o.margin || [10, 50, 10, 100], 
+					nodeHeight: o.nodeHeight || 20, 
+					levelWidth: o.levelWidth || 180, 
+					circleRadius: o.circleRadius || 4.5, 
+					pathWidth: o.pathWidth || 6	, 
+					colors: { 
+						dummyColor: (o.colors && o.colors.dummyColor) || '#fff', 
+						fillColor: (o.colors && o.colors.fillColor) || '#FFA100', 
+						labelColor: (o.colors && o.colors.labelColor) || '#333', 
+						pathColor: (o.colors && o.colors.pathColor) || '#cdcdcd', 
+						strokeColor: (o.colors && o.colors.strokeColor) || '#FFA100' 
+					} 
+				}
+				
+				var margin = options.margin; // Top Right Bottom Left
+				var tree, diagonal = d3.svg.diagonal().projection(function(d) { return [d.y, d.x]; });
+
+				scope.$watch(function() {
+					return angular.element($window)[0].innerWidth;
+				}, function() {
+					$http({
+						url: attrs.data
+					}).then(function(response, status) {
+						scope.data = response.data;
+						scope.toggleAll(scope.data);
+						scope.render(scope.data);
+					});
+				});
+			
+			
+				var svg = d3.select(element[0]).append("svg"), vis, width, height, root={}, i=0;
+				var tooltip = angular.element(element.children()[0]);
+	
+				scope.render = function(data) {
+					root = data;
+					if (!root) { alert("No Data..."); return; }
+					
+					width = element[0].parentNode.clientWidth - margin[1]- margin[3];
+					height = Math.max(450, element[0].parentNode.clientHeight + margin[0]+ margin[2]);
+					tree = d3.layout.tree().size([height, width]);
+					root.x0 = height / 2;
+					root.y0 = 0;
+					
+					svg.html("");
+					svg.attr("width", width)
+						.attr("height", height);
+						
+					vis = svg.append("svg:g")
+						.attr("transform", "translate(" + margin[3] + "," + margin[0] + ")");
+						
+					scope.update(root);
+				};
+				
+				scope.update = function(source) {
+					var duration = d3.event && d3.event.altKey ? 5000 : 500;
+
+					// Compute the new tree layout.
+					var nodes = tree.nodes(root).reverse();
+					var h = Math.max(height, nodes.length * (options.nodeHeight* 2) + margin[0] + margin[2]);
+					svg.attr("height", h);
+
+					// Normalize for fixed-depth.
+					nodes.forEach(function(d) { d.y = d.depth * options.levelWidth; d.x = d.x / height * h; });
+					
+					d3.select(vis).html("sdf");
+					// Update the nodesâ€¦
+					var node = vis.selectAll("g.node")
+						.data(nodes, function(d) { var id = d.id || (d.id = ++i); return scope.prefix + "-" + id; });
+
+					// Enter any new nodes at the parent's previous position.
+					var nodeEnter = node.enter().append("svg:g")
+						.attr("class", "node")
+						.attr("transform", function(d) { return "translate(" + source.y0 + "," + source.x0 + ")"; })
+						.on("click", function(d) { scope.toggle(d); scope.update(d); });
+
+					nodeEnter.append("svg:circle")
+						.attr("r", options.circleRadius)
+						.style("cursor", "pointer")
+						.style("fill", function(d) { return d._children ? options.colors.fillColor : options.colors.dummyColor; })
+						.style("stroke", function(d) { return options.colors["pathColor"]; })
+						.style("stroke-width", "3")
+						.on("mouseover", function(d) { 
+							if (tooltip) { 
+								scope.$apply(function() { scope.tooltipUpdate(d); });
+								scope.tooltipHandler(d);
+								tooltip.css("display", "block"); 
+							} 
+						})
+						.on("mouseout", function(d) { 
+							if (tooltip) { 
+								scope.$apply(function() { scope.tooltipUpdate(d); });
+								tooltip.css("display", "none"); 
+							}
+						});
+
+					nodeEnter.append("svg:text")
+						.attr("x", function(d) { return d.children || d._children ? -10 : 10; })
+						.attr("dy", ".35em")
+						.attr("text-anchor", function(d) { return d.children || d._children ? "end" : "start"; })
+						.text(function(d) { return d.name; })
+						.style("fill", options.colors.labelColor)
+						.style("fill-opacity", 1e-6);
+
+						// Transition nodes to their new position.
+						var nodeUpdate = node.transition()
+							.duration(duration)
+							.attr("transform", function(d) { return "translate(" + d.y + "," + d.x + ")"; });
+
+						nodeUpdate.select("circle")
+							.attr("r", options.circleRadius)
+							.style("fill", function(d) { return d._children ? options.colors.fillColor : options.colors.dummyColor; });
+
+						nodeUpdate.select("text")
+							.style("fill-opacity", 1);
+
+						// Transition exiting nodes to the parent's new position.
+						var nodeExit = node.exit().transition()
+							.duration(duration)
+							.attr("transform", function(d) { return "translate(" + source.y + "," + source.x + ")"; })
+							.remove();
+
+						nodeExit.select("circle")
+							.attr("r", options.circleRadius);
+
+						nodeExit.select("text")
+							.style("fill-opacity", 1e-6);
+
+						// Update the linksâ€¦
+						var link = vis.selectAll("path.link")
+							.data(tree.links(nodes), function(d) { return d.target.id; });
+
+						// Enter any new links at the parent's previous position.
+						link.enter().insert("svg:path", "g")
+							.attr("class", "link")
+							.style("fill", "none")
+							.style("stroke", options.colors.pathColor)
+							.style("stroke-width", options.pathWidth)
+							.attr("d", function(d) {
+								var o = {x: source.x0, y: source.y0};
+								return diagonal({source: o, target: o});
+							})
+							.transition()
+							.duration(duration)
+							.attr("d", diagonal);
+
+						// Transition links to their new position.
+						link.transition()
+							.duration(duration)
+							.attr("d", diagonal);
+
+						// Transition exiting nodes to the parent's new position.
+						link.exit().transition()
+							.duration(duration)
+							.attr("d", function(d) {
+								var o = {x: source.x, y: source.y};
+								return diagonal({source: o, target: o});
+							})
+							.remove();
+
+						// Stash the old positions for transition.
+						nodes.forEach(function(d) {
+							d.x0 = d.x;
+							d.y0 = d.y;
+						});
+
+				}; // render
+				
+				scope.tooltipHandler= function(d) {
+					var width = tooltip[0].clientWidth, height = tooltip[0].clientHeight;
+					d3.select(tooltip[0])
+						.style("left", function() {
+							if ((d3.event.pageX - width) < 10) {
+								return (d3.event.pageX + options.circleRadius) + "px";
+							} else {
+								return (d3.event.pageX - width + options.circleRadius) + "px";
+							}
+						})
+						.style("top", function() {
+							if ((d3.event.pageY - height) < 10) {
+								return (d3.event.pageY + options.circleRadius) + "px";
+							} else {
+								return (d3.event.pageY - height + options.circleRadius) + "px";
+							}
+						})
+						.style("display", "block");
+				}
+			
+		}
+	}
+}];
