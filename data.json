@@ -1,0 +1,30 @@
+[{
+    "timestamp": "2015-01-26T00:00:00",
+    "dashboard": "Dashboard A",
+    "usage": "10"
+},
+    {
+        "timestamp": "2015-01-26T00:00:00",
+        "dashboard": "Dashboard B",
+        "usage": "3"
+    },
+    {
+        "timestamp": "2015-01-26T00:00:00",
+        "dashboard": "Dashboard C",
+        "usage": "17"
+    },
+    {
+        "timestamp": "2015-01-27T00:00:00",
+        "dashboard": "Dashboard A",
+        "usage": "25"
+    },
+    {
+        "timestamp": "2015-01-27T00:00:00",
+        "dashboard": "Dashboard B",
+        "usage": "32"
+    },
+    {
+        "timestamp": "2015-01-27T00:00:00",
+        "dashboard": "Dashboard C",
+        "usage": "6"
+    }]
