@@ -1,42 +1,27 @@
-<!DOCTYPE html>
-<meta charset="utf-8">
-<html>
-<head>
-    <style>
-        rect.bordered {
-            stroke: #E6E6E6;
-            stroke-width:2px;
-        }
+var colorMatrixDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http){
 
-        text.mono {
-            font-size: 9pt;
-            font-family: Consolas, courier;
-            fill: #aaa;
-        }
-
-        text.axis-workweek {
-            fill: #000;
-        }
-
-        text.axis-worktime {
-            fill: #000;
-        }
-    </style>
-    <script src="http://d3js.org/d3.v3.js"></script>
-</head>
-<body>
-
-<div id="chart"></div>
-
-<script type="text/javascript">
-
-    var margin = { top: 70, right: 0, bottom: 100, left: 55 },
+	return {
+		restrict: 'E',
+		template: '<div id="color-matrix-container"></div>',
+		scope: {},
+		link: function(scope, element, attrs){
+		
+		drawColorMatrix();
+		
+		function drawColorMatrix(){
+			var margin = { top: 70, right: 0, bottom: 100, left: 55 },
             width = 260 - margin.left - margin.right,
             height = 230,
             legendSize = Math.floor(width / 24),
             legendElementWidth = legendSize*2,
             buckets = 15,
-            colors = ['#f6faaa','#FEE08B','#FDAE61','#F46D43','#D53E4F','#9E0142'] // alternatively colorbrewer.YlGnBu[9]
+			colorScheme = {
+				dark : ["#ffffd9","#edf8b1","#c7e9b4","#7fcdbb","#41b6c4","#1d91c0","#225ea8","#253494","#081d58"],
+				light: ['#f6faaa','#FEE08B','#FDAE61','#F46D43','#D53E4F','#9E0142'],
+				binary: ['#ff0000', '#00ff00']
+			},
+			colors = [],
+			metadataAttributes = {};
 
 
     var hourFormat = d3.time.format('%H'),
@@ -50,13 +35,25 @@
                     .ticks(d3.time.days,3)
                     .tickFormat(monthDayFormat)
 
-    var svg = d3.select("#chart").append("svg")
+    var svg = d3.select("#color-matrix-container").append("svg")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-    d3.json("data.json",
+	$http.get(attrs.metadataUrl)
+			.then(function(response) {
+						metadataAttributes = response.data.metadata.attributes;
+						colors = (metadataAttributes.colorScheme) ? colorScheme[metadataAttributes.colorScheme] : colorScheme['light'];
+
+						console.log("Color Scheme Chosen :: ", colors);
+				
+						getColorMatrixData();
+			});
+	
+	function getColorMatrixData(){
+			
+    d3.json(attrs.url,
             function(error, data) {
 
                 data.forEach(function(d) {
@@ -64,8 +61,6 @@
                     d.dashboard = d.dashboard;
                     d.timestamp = monthDayFormat(timeFormat.parse(d.timestamp));
                 });
-
-                console.log("Formatted data ==> ", data);
 
                 var uniqueValues = function(value, index, self){
                     return self.indexOf(value) === index;
@@ -136,6 +131,11 @@
                         .attr("transform", "translate(-55, 0)")
                         .style("fill", function(d, i) { return colors[i]; });
             });
-</script>
-</body>
-</html>
+			
+			}
+	}
+		}
+		
+	}
+
+}];
