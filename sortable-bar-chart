@@ -1,0 +1,126 @@
+var sortableBarController = ['$scope', function($scope){
+	console.log("SortableBarController :: ReadyState");
+}];
+
+var sortableBarDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http){
+
+	return {
+		restrict: 'E',
+		template: '<div id="sorting-chkbox"><label><input type="checkbox"> Sort values</label></div><div id="sortable-bar-container"></div>',
+		scope: {},
+		link: function(scope, element, attrs){
+		
+		drawSortableBarChart();
+		
+		function drawSortableBarChart(){
+			
+			var margin = {top: 20, right: 20, bottom: 30, left: 40},
+			width = 960 - margin.left - margin.right,
+			height = 500 - margin.top - margin.bottom;
+
+			var formatPercent = d3.format(".0%");
+
+			var x = d3.scale.ordinal()
+				.rangeRoundBands([0, width], .1, 1);
+
+			var y = d3.scale.linear()
+				.range([height, 0]);
+
+			var xAxis = d3.svg.axis()
+				.scale(x)
+				.orient("bottom");
+
+			var yAxis = d3.svg.axis()
+				.scale(y)
+				.orient("left")
+				.tickFormat(formatPercent);
+
+			var svg = d3.select("body").append("svg")
+				.attr("width", width + margin.left + margin.right)
+				.attr("height", height + margin.top + margin.bottom)
+			  .append("g")
+				.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+		$http.get(attrs.metadataUrl)
+				.then(function(response) {
+							metadataAttributes = response.data.metadata.attributes;
+							colors = (metadataAttributes.colorScheme) ? colorScheme[metadataAttributes.colorScheme] : colorScheme['light'];
+
+							console.log("Color Scheme Chosen :: ", colors);
+					
+							getSortableBarData();
+				});
+	
+	function getSortableBarData(){
+			
+    d3.json(attrs.url,
+            function(error, data) {
+
+                data.forEach(function(d) {
+                    d.category = d[Object.keys(d)[1]];
+                });
+
+              x.domain(data.map(function(d) { return d[Object.keys(d)[0]]; }));
+			  y.domain([0, d3.max(data, function(d) { return d[Object.keys(d)[1]]; })]);
+
+			  svg.append("g")
+				  .attr("class", "x axis")
+				  .attr("transform", "translate(0," + height + ")")
+				  .call(xAxis);
+
+			  svg.append("g")
+				  .attr("class", "y axis")
+				  .call(yAxis)
+				.append("text")
+				  .attr("transform", "rotate(-90)")
+				  .attr("y", 6)
+				  .attr("dy", ".71em")
+				  .style("text-anchor", "end");
+
+			  svg.selectAll(".bar")
+				  .data(data)
+				.enter().append("rect")
+				  .attr("class", "bar")
+				  .attr("x", function(d) { return x(d[Object.keys(d)[0]]); })
+				  .attr("width", x.rangeBand())
+				  .attr("y", function(d) { return y(d[Object.keys(d)[1]]); })
+				  .attr("height", function(d) { return height - y(d[Object.keys(d)[1]]); });
+
+			  d3.select("input").on("change", change);
+
+			  var sortTimeout = setTimeout(function() {
+				d3.select("input").property("checked", true).each(change);
+			  }, 2000);
+			  
+			  function change() {
+				clearTimeout(sortTimeout);
+
+				// Copy-on-write since tweens are evaluated after a delay.
+				var x0 = x.domain(data.sort(this.checked
+					? function(a, b) { return b[Object.keys(b)[1]] - a[Object.keys(a)[1]]; }
+					: function(a, b) { return d3.ascending(a[Object.keys(a)[0]], b[Object.keys(b)[0]]); })
+					.map(function(d) { return d[Object.keys(d)[0]]; }))
+					.copy();
+
+				var transition = svg.transition().duration(750),
+					delay = function(d, i) { return i * 50; };
+
+				transition.selectAll(".bar")
+					.delay(delay)
+					.attr("x", function(d) { return x0(d[Object.keys(d)[0]]); });
+
+				transition.select(".x.axis")
+					.call(xAxis)
+				  .selectAll("g")
+					.delay(delay);
+			  }
+			  
+            });
+			
+			}
+	}
+		}
+		
+	}
+
+}];
