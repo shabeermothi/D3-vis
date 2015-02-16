@@ -1,6 +1,6 @@
 {"responseData" : [{
     "timestamp": "2015-01-26",
-    "dashboard": "Dashboard A",
+    "dashboard": "Quick brown fox jumped over the lazy dog",
     "usage": "10"
 },
     {
@@ -15,7 +15,7 @@
     },
     {
         "timestamp": "2015-01-27",
-        "dashboard": "Dashboard A",
+        "dashboard": "Quick brown fox jumped over the lazy dog",
         "usage": "25"
     },
     {
