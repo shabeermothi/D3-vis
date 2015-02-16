@@ -1,3 +1,7 @@
+var colorMatrixController = ['$scope', function($scope){
+	console.log("ColorMatrixController :: ReadyState");
+}];
+
 var colorMatrixDirective = ['$window', '$timeout', '$http', function($window, $timeout, $http){
 
 	return {
@@ -10,9 +14,9 @@ var colorMatrixDirective = ['$window', '$timeout', '$http', function($window, $t
 		
 		function drawColorMatrix(){
 			var margin = { top: 70, right: 0, bottom: 100, left: 55 },
-            width = 260 - margin.left - margin.right,
-            height = 230,
-            legendSize = Math.floor(width / 24),
+            width = 300,
+            height = window.innerHeight,
+            legendSize = Math.floor(260 / 24),
             legendElementWidth = legendSize*2,
             buckets = 15,
 			colorScheme = {
@@ -29,80 +33,80 @@ var colorMatrixDirective = ['$window', '$timeout', '$http', function($window, $t
             timeFormat = d3.time.format('%Y-%m-%dT%X'),
             monthDayFormat = d3.time.format('%m.%d');
 
-    var xAxisScale = d3.time.scale(),
-            xAxis = d3.svg.axis()
-                    .orient('top')
-                    .ticks(d3.time.days,3)
-                    .tickFormat(monthDayFormat)
-
-    var svg = d3.select("#color-matrix-container").append("svg")
-            .attr("width", width + margin.left + margin.right)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-	$http.get(attrs.metadataUrl)
+    if(attrs.metadataUrl != undefined){
+		$http.get(attrs.metadataUrl)
 			.then(function(response) {
 						metadataAttributes = response.data.metadata.attributes;
 						colors = (metadataAttributes.colorScheme) ? colorScheme[metadataAttributes.colorScheme] : colorScheme['light'];
-
-						console.log("Color Scheme Chosen :: ", colors);
 				
 						getColorMatrixData();
 			});
+	}else{
+		colors = colorScheme['light'];
+		getColorMatrixData();
+	}
 	
 	function getColorMatrixData(){
 			
     d3.json(attrs.url,
             function(error, data) {
-
-                data.forEach(function(d) {
-                    d.usage = d.usage;
-                    d.dashboard = d.dashboard;
-                    d.timestamp = monthDayFormat(timeFormat.parse(d.timestamp));
+			
+                data.responseData.forEach(function(d) {
+                    d.usage = d[Object.keys(d)[2]];
+                    d.dashboard = d[Object.keys(d)[1]]
+                    d.timestamp = d[Object.keys(d)[0]];
                 });
-
+				
                 var uniqueValues = function(value, index, self){
                     return self.indexOf(value) === index;
                 };
 
-                var dashboardName = data.map(function(obj){ return obj.dashboard; });
-                var plotDate = data.map(function(obj){ return obj.timestamp; });
+                var dashboardName = data.responseData.map(function(obj){ return obj.dashboard; });
+                var plotDate = data.responseData.map(function(obj){ return obj.timestamp; });
 
                 dashboardName = dashboardName.filter(uniqueValues);
                 plotDate = plotDate.filter(uniqueValues);
 
-                gridSize = Math.floor(width/(plotDate.length + dashboardName.length));
+				gridSize = 20;
+				
+                width = width + ((plotDate.length) * gridSize);
+				height = ((dashboardName.length) * gridSize);
+				
+				var svg = d3.select("#color-matrix-container")
+							.append("svg")
+							.attr("width", width + margin.left + margin.right)
+							.attr("height", height + margin.top + margin.bottom)
+							.append("g")
+							.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
                 var colorScale = d3.scale.quantile()
-                        .domain([0, buckets - 1, d3.max(data, function (d) { return d.usage; })])
+                        .domain([0, buckets - 1, d3.max(data.responseData, function (d) { return d.usage; })])
                         .range(colors);
 
                 var yAxisLabels = svg.selectAll(".yAxisLabel")
                         .data(dashboardName)
                         .enter().append("text")
-                        .text(function (d) { return (d.length > 5) ? (d.substring(0, d.length - 6) + "..") : d; })
+                        .text(function (d) { return d; })
                         .attr("x", 0)
                         .attr("y", function (d, i) { return i * gridSize; })
                         .style("text-anchor", "end")
-                        .attr("transform", "translate(-6," + gridSize / 1.5 + ")")
+                        .attr("transform", "translate(-6," + (gridSize - 10) + ")")
                         .attr("class", function (d, i) { return ((i >= 0 && i <= 4) ? "yAxisLabel mono axis axis-workweek" : "yAxisLabel mono axis"); });
 
                 var xAxisLabels = svg.selectAll(".xAxisLabel")
                         .data(plotDate)
-                        .call(xAxis)
                         .enter().append("text")
-                        .text(function(d) { return d; })
-                        .attr("x", 15)
-                        .attr("y", function(d, i) { return i * gridSize; })
+                        .text(function(d, i) { return (i%2 != 0) ? d : ""; })
+                        .attr("x", 30)
+                        .attr("y", function(d, i) { return (i * gridSize) + 30; })
                         .style("text-anchor", "middle")
-                        .attr("transform", "translate(" + gridSize /1.5 + ", -6) rotate(-90)")
+                        .attr("transform", "translate(" + gridSize + ", -6) rotate(-90)")
                         .attr("class", function(d, i) { return ((i >= 7 && i <= 16) ? "xAxisLabel mono axis axis-worktime" : "xAxisLabel mono axis"); });
 
                 var heatMap = svg.selectAll(".hour")
-                        .data(data)
+                        .data(data.responseData)
                         .enter().append("rect")
-                        .attr("x", function(d) { return (plotDate.indexOf(d.timestamp)) * gridSize; })
+                        .attr("x", function(d) { return ((plotDate.indexOf(d.timestamp)) * gridSize) + 30; })
                         .attr("y", function(d) { return (dashboardName.indexOf(d.dashboard)) * gridSize; })
                         .attr("rx", 4)
                         .attr("ry", 4)
@@ -116,7 +120,7 @@ var colorMatrixDirective = ['$window', '$timeout', '$http', function($window, $t
                         .duration(1000).delay(500)
                         .style("fill", function(d) { return colorScale(d.usage); });
 
-                heatMap.append("title").text(function(d) { return d.usage; });
+                heatMap.append("title").text(function(d) { return d.dashboard + " : " + d.timestamp + " => " + d.usage; });
 
                 var legend = svg.selectAll(".legend")
                         .data([0].concat(colorScale.quantiles()), function(d) { return d; })
